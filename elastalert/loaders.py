@@ -177,7 +177,11 @@ class RulesLoader(object):
                 if rule['name'] in names:
                     raise EAException('Duplicate rule named %s' % (rule['name']))
             except EAException as e:
-                raise EAException('Error loading file %s: %s' % (rule_file, e))
+                if (conf.get('skip_invalid')):
+                    elastalert_logger.error(e)
+                    continue
+                else:
+                    raise EAException('Error loading file %s: %s' % (rule_file, e))
 
             rules.append(rule)
             names.append(rule['name'])
@@ -331,6 +335,10 @@ class RulesLoader(object):
                 rule['kibana_discover_from_timedelta'] = datetime.timedelta(**rule['kibana_discover_from_timedelta'])
             if 'kibana_discover_to_timedelta' in rule:
                 rule['kibana_discover_to_timedelta'] = datetime.timedelta(**rule['kibana_discover_to_timedelta'])
+            if 'opensearch_discover_from_timedelta' in rule:
+                rule['opensearch_discover_from_timedelta'] = datetime.timedelta(**rule['opensearch_discover_from_timedelta'])
+            if 'opensearch_discover_to_timedelta' in rule:
+                rule['opensearch_discover_to_timedelta'] = datetime.timedelta(**rule['opensearch_discover_to_timedelta'])
         except (KeyError, TypeError) as e:
             raise EAException('Invalid time format used: %s' % e)
 

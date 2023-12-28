@@ -44,7 +44,7 @@ def new_get_event_ts(ts_field):
     return lambda event: lookup_es_key(event[0], ts_field)
 
 
-def _find_es_dict_by_key(lookup_dict, term):
+def _find_es_dict_by_key(lookup_dict: dict, term: str, string_multi_field_name: str = ".keyword") -> tuple[dict, str]:
     """ Performs iterative dictionary search based upon the following conditions:
 
     1. Subkeys may either appear behind a full stop (.) or at one lookup_dict level lower in the tree.
@@ -64,8 +64,31 @@ def _find_es_dict_by_key(lookup_dict, term):
     element which is the last subkey used to access the target specified by the term. None is
     returned for both if the key can not be found.
     """
+
+    # For compound fieldnames added by ElastAlert.process_hits()
+    #
+    # For example, when query_key is a list of fieldnames it will insert a term
+    #     'key_1,other_fieldname,a_third_name'
+    # and if the rule is set for raw_query_keys, the query_key values may end
+    # with .keyword it will insert instead something like
+    #     'key_1_ip,other_fieldname_number,a_third_name.keyword'
+    # and we need to check for that synthentic compound fielname, including the
+    # .keyword suffix before contnuing
+    #
+    # Of course, it also handles happy path, non-ambuiguous fieldnames like
+    # 'ip_address' and 'src_displayname' that don't have . or [] characters
     if term in lookup_dict:
         return lookup_dict, term
+
+    # If not synthetically added by ElastAlert, matching documents will not have
+    # .keyword fieldnames, even if a .keyword fieldname was used as a term in
+    # the search
+    # e.g. {"term": {"description.keyword": "Target Description Here"}}
+    # will return a document with {"_source": {"description": "Target Description Here"}}
+    term = term.removesuffix(string_multi_field_name)
+    if term in lookup_dict:
+        return lookup_dict, term
+
     # If the term does not match immediately, perform iterative lookup:
     # 1. Split the search term into tokens
     # 2. Recurrently concatenate these together to traverse deeper into the dictionary,
@@ -186,7 +209,8 @@ def dt_to_ts_with_format(dt, ts_format):
 
 
 def ts_now():
-    return datetime.datetime.utcnow().replace(tzinfo=dateutil.tz.tzutc())
+    now = datetime.datetime.now(tz=datetime.UTC)
+    return now.replace(tzinfo=dateutil.tz.tzutc())
 
 
 def ts_utc_to_tz(ts, tz_name):
@@ -236,18 +260,24 @@ def format_index(index, start, end, add_extra=False):
     # Convert to UTC
     start -= start.utcoffset()
     end -= end.utcoffset()
-    original_start = start
-    indices = set()
-    while start.date() <= end.date():
-        indices.add(start.strftime(index))
-        start += datetime.timedelta(days=1)
-    num = len(indices)
+
+    if "%H" in index:
+        dt = datetime.timedelta(hours=1)
+        end = end.replace(second=0, microsecond=0, minute=0)
+    else:
+        dt = datetime.timedelta(days=1)
+        end = end.replace(second=0, microsecond=0, minute=0, hour=0)
     if add_extra:
-        while len(indices) == num:
-            original_start -= datetime.timedelta(days=1)
-            new_index = original_start.strftime(index)
-            assert new_index != index, "You cannot use a static index with search_extra_index"
-            indices.add(new_index)
+        start -= dt
+    indices = set()
+    indices.add(start.strftime(index))
+    while start <= end:
+        start += dt
+        indices.add(start.strftime(index))
+
+    if add_extra:
+        if index in indices:
+            raise EAException("You cannot use a static index {} with search_extra_index".format(index))
 
     return ','.join(indices)
 
@@ -268,8 +298,8 @@ def total_seconds(dt):
 
 
 def dt_to_int(dt):
-    dt = dt.replace(tzinfo=None)
-    return int(total_seconds((dt - datetime.datetime.utcfromtimestamp(0))) * 1000)
+    dt = dt.replace(tzinfo=datetime.UTC)
+    return int(total_seconds((dt - datetime.datetime.fromtimestamp(0, tz=datetime.UTC))) * 1000)
 
 
 def unixms_to_dt(ts):
@@ -277,7 +307,7 @@ def unixms_to_dt(ts):
 
 
 def unix_to_dt(ts):
-    dt = datetime.datetime.utcfromtimestamp(float(ts))
+    dt = datetime.datetime.fromtimestamp(float(ts), tz=datetime.UTC)
     dt = dt.replace(tzinfo=dateutil.tz.tzutc())
     return dt
 

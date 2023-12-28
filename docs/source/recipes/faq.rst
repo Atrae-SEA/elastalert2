@@ -37,6 +37,13 @@ to use ``foo.raw``. If you are still having trouble troubleshooting why your doc
 try running ElastAlert 2 with ``--es_debug_trace /path/to/file.log``. This will log the queries made
 to Elasticsearch in full so that you can see exactly what is happening.
 
+Finally, but very important, if you have enabled role-based access control in Elasticsearch: make 
+sure that the Elasticsearch user used by ElastAlert actually has the privileges to access the 
+index (at least ``read`` permission). See 
+[ES documentation page](https://www.elastic.co/guide/en/elasticsearch/reference/current/authorization.html) 
+on the topic of user authorization.
+
+
 I got hits, why didn't I get an alert?
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -386,7 +393,7 @@ The es_host parameter seems to use only one host. Is it possible to specify mult
 There are two options:
 
 1. Use haproxy in front of elasticsearch to support multiple hosts.
-2. Use the new ``es_hosts`` parameter introduced in ElastAlert 2.2.3. See :ref:`Configuration <configuration>`.
+2. Use the new ``es_hosts`` parameter introduced in ElastAlert 2.2.3. See :doc:`Configuration <../configuration>`.
 
 Is there any plan to implement a REST API into this project?
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -400,8 +407,9 @@ This is the default limit for ElasticSearch. Specifying more than 1024 items in 
 This is a known issue. Perhaps White List can have similar issues.
 See the following issues on the original yelp/elastalert for more information.
 
-https://github.com/Yelp/elastalert/issues/1867<br>
-https://github.com/Yelp/elastalert/issues/2704
+`Blacklist filter with 10.000+ terms is extremely slow <https://github.com/Yelp/elastalert/issues/1867>`_.
+
+`Failed to parse query for blacklist rule when file contains more than 1024 entries <https://github.com/Yelp/elastalert/issues/2704>`_.
 
 ElastAlert 2 doesn't have a listening port?
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -505,3 +513,13 @@ example
 .. code-block:: yaml
 
     disable_rules_on_error: false
+
+
+Is there an introductory article about elastalert2?
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Yelp, the developer of the original elastalert, has the following article on its blog.
+
+`ElastAlert: Alerting At Scale With Elasticsearch, Part 1 <https://engineeringblog.yelp.com/2015/10/elastalert-alerting-at-scale-with-elasticsearch.html>`_.
+
+`ElastAlert: Alerting At Scale With Elasticsearch, Part 2 <https://engineeringblog.yelp.com/2016/03/elastalert-part-two.html>`_.

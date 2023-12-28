@@ -12,44 +12,43 @@ from .util import elastalert_logger
 from .util import lookup_es_key
 from .util import ts_add
 
-kibana_default_timedelta = datetime.timedelta(minutes=10)
+opensearch_default_timedelta = datetime.timedelta(minutes=10)
 
-kibana_versions = frozenset([
-        '7.0', '7.1', '7.2', '7.3', '7.4', '7.5', '7.6', '7.7', '7.8', '7.9', '7.10', '7.11', '7.12', '7.13', '7.14', '7.15', '7.16', '7.17', 
-        '8.0', '8.1', '8.2', '8.3', '8.4', '8.5', '8.6', '8.7', '8.8', '8.9', '8.10', '8.11'
+opensearch_versions = frozenset([
+        '2.11'
         ])
 
-def generate_kibana_discover_url(rule, match):
-    ''' Creates a link for a kibana discover app. '''
+def generate_opensearch_discover_url(rule, match):
+    ''' Creates a link for a opensearch discover app. '''
 
-    discover_app_url = rule.get('kibana_discover_app_url')
+    discover_app_url = rule.get('opensearch_discover_app_url')
     if not discover_app_url:
         elastalert_logger.warning(
-            'Missing kibana_discover_app_url for rule %s' % (
+            'Missing opensearch_discover_app_url for rule %s' % (
                 rule.get('name', '<MISSING NAME>')
             )
         )
         return None
 
-    kibana_version = rule.get('kibana_discover_version')
-    if not kibana_version:
+    opensearch_version = rule.get('opensearch_discover_version')
+    if not opensearch_version:
         elastalert_logger.warning(
-            'Missing kibana_discover_version for rule %s' % (
+            'Missing opensearch_discover_version for rule %s' % (
                 rule.get('name', '<MISSING NAME>')
             )
         )
         return None
 
-    index = rule.get('kibana_discover_index_pattern_id')
+    index = rule.get('opensearch_discover_index_pattern_id')
     if not index:
         elastalert_logger.warning(
-            'Missing kibana_discover_index_pattern_id for rule %s' % (
+            'Missing opensearch_discover_index_pattern_id for rule %s' % (
                 rule.get('name', '<MISSING NAME>')
             )
         )
         return None
 
-    columns = rule.get('kibana_discover_columns', ['_source'])
+    columns = rule.get('opensearch_discover_columns', ['_source'])
     filters = rule.get('filter', [])
 
     if 'query_key' in rule:
@@ -58,33 +57,41 @@ def generate_kibana_discover_url(rule, match):
         query_keys = []
 
     timestamp = lookup_es_key(match, rule['timestamp_field'])
-    timeframe = rule.get('timeframe', kibana_default_timedelta)
-    from_timedelta = rule.get('kibana_discover_from_timedelta', timeframe)
+    timeframe = rule.get('timeframe', opensearch_default_timedelta)
+    from_timedelta = rule.get('opensearch_discover_from_timedelta', timeframe)
     from_time = ts_add(timestamp, -from_timedelta)
-    to_timedelta = rule.get('kibana_discover_to_timedelta', timeframe)
+    to_timedelta = rule.get('opensearch_discover_to_timedelta', timeframe)
     to_time = ts_add(timestamp, to_timedelta)
 
-    if kibana_version in kibana_versions:
-        globalState = kibana7_disover_global_state(from_time, to_time)
-        appState = kibana_discover_app_state(index, columns, filters, query_keys, match)
+    if opensearch_version in opensearch_versions:
+        globalState = opensearch_disover_global_state(from_time, to_time)
+        appState = opensearch_discover_app_state(index, columns, filters, query_keys, match)
+        appFilter = opensearch_discover_app_filter(index, columns, filters, query_keys, match)
 
     else:
         elastalert_logger.warning(
-            'Unknown kibana discover application version %s for rule %s' % (
-                kibana_version,
+            'Unknown opensearch discover application version %s for rule %s' % (
+                opensearch_version,
                 rule.get('name', '<MISSING NAME>')
             )
         )
         return None
 
-    return "%s?_g=%s&_a=%s" % (
+    urlqueryOriginal = "%s?_g=%s&_a=%s&_q=%s" % (
         os.path.expandvars(discover_app_url),
         urllib.parse.quote(globalState),
-        urllib.parse.quote(appState)
+        urllib.parse.quote(appState),
+        urllib.parse.quote(appFilter)
     )
+    
+    word_to_replace = 'tobereplacedbylucenequery'
+    replacement_word = 'query'
+    max_replacements = 1  # Replace only the first occurrence
+    urlquery = urlqueryOriginal.replace(word_to_replace, replacement_word, max_replacements)
+    return urlquery
 
 
-def kibana7_disover_global_state(from_time, to_time):
+def opensearch_disover_global_state(from_time, to_time):
     return prison.dumps( {
         'filters': [],
         'refreshInterval': {
@@ -98,12 +105,24 @@ def kibana7_disover_global_state(from_time, to_time):
     } )
 
 
-def kibana_discover_app_state(index, columns, filters, query_keys, match):
+def opensearch_discover_app_state(index, columns, filters, query_keys, match):
+    return prison.dumps( {
+        'discover': {
+            'columns': columns,
+            'isDirty': False,
+            'sort': []
+        },
+        'metadata': {
+            'indexPattern': index,
+            'view': 'discover'
+        }
+    } )
+
+def opensearch_discover_app_filter(index, columns, filters, query_keys, match):
     app_filters = []
 
     if filters:
 
-        # Remove nested query since the outer most query key will break Kibana 8.
         new_filters = []
         for filter in filters:
             if 'query' in filter:
@@ -111,21 +130,21 @@ def kibana_discover_app_state(index, columns, filters, query_keys, match):
             new_filters.append(filter)
         filters = new_filters
 
-        bool_filter = { 'must': filters }
+        bool_filter = {'bool': {'must': filters } }
         app_filters.append( {
             '$state': {
                 'store': 'appState'
             },
-            'bool': bool_filter,
             'meta': {
                 'alias': 'filter',
                 'disabled': False,
                 'index': index,
-                'key': 'bool',
+                'key': 'query',
                 'negate': False,
                 'type': 'custom',
                 'value': json.dumps(bool_filter, separators=(',', ':'))
             },
+            'query': bool_filter
         } )
 
     for query_key in query_keys:
@@ -146,6 +165,7 @@ def kibana_discover_app_state(index, columns, filters, query_keys, match):
                     'key': query_key,
                     'negate': True,
                     'type': 'exists',
+                    'view': 'discover',
                     'value': 'exists'
                 }
             } )
@@ -179,8 +199,6 @@ def kibana_discover_app_state(index, columns, filters, query_keys, match):
             } )
 
     return prison.dumps( {
-        'columns': columns,
         'filters': app_filters,
-        'index': index,
-        'interval': 'auto'
+        'tobereplacedbylucenequery': {'language': 'lucene','query': ''}
     } )
